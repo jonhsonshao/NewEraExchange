@@ -17,7 +17,6 @@
         button:disabled{opacity:0.6;cursor:not-allowed;}
         .btn-blue{background:#2196f3;color:#fff}
         .btn-green{background:#00c853;color:#fff}
-        .btn-orange{background:#ff9100;color:#fff}
         .info{background:#1b2642;padding:12px;border-radius:8px;margin:8px 0;font-size:14px;color:#c8e1ff;word-break:break-all}
         .copy-box{display:flex;gap:8px}
         .copy-box input{flex:1}
@@ -51,13 +50,12 @@
 <div class="card">
     <div class="row">
         <label>兑换USDT数量</label>
-        <input type="number" id="usdtAmount" placeholder="输入USDT数量，授权与兑换将使用该数值" min="0" step="0.01">
+        <input type="number" id="usdtAmount" placeholder="输入USDT数量" min="0" step="0.01">
         <p class="tip">1 USDT = 1000 NewEra</p>
     </div>
     <div class="row">
         <div class="info" id="estimateOutput">预计获得 NewEra：0</div>
     </div>
-    <button class="btn-orange" id="approveBtn">授权对应数量USDT给兑换合约</button>
     <button class="btn-green" id="exchangeBtn">执行兑换</button>
 </div>
 
@@ -162,27 +160,7 @@ document.getElementById("usdtAmount").oninput = function(){
     document.getElementById("estimateOutput").innerText = "预计获得 NewEra："+(val * EXCHANGE_RATE).toFixed(2);
 }
 
-//【修复】授权：输入多少授权多少，不再无限授权
-document.getElementById("approveBtn").addEventListener("click",async ()=>{
-    if(!currentAccount) return alert("先连接钱包");
-    const inputVal = document.getElementById("usdtAmount").value;
-    const amountNum = parseFloat(inputVal);
-    if(!amountNum || amountNum <= 0){
-        return alert("请先填写兑换USDT数量");
-    }
-    const amountWei = web3.utils.toWei(inputVal, "ether");
-    try{
-        document.getElementById("approveBtn").disabled=true;
-        await usdtContract.methods.approve(EXCHANGE_CONTRACT, amountWei).send({from:currentAccount});
-        alert("授权成功，可以进行兑换！");
-    }catch(e){
-        alert("授权失败："+(e.message || JSON.stringify(e)));
-    }finally{
-        document.getElementById("approveBtn").disabled=false;
-    }
-})
-
-//【核心修复】兑换推荐人参数严格遵循合约绑定逻辑
+//【核心：单按钮自动授权+兑换】
 document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
     if(!currentAccount) return alert("先连接钱包");
     const inputVal = document.getElementById("usdtAmount").value;
@@ -190,21 +168,32 @@ document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
     if(!amountNum || amountNum <= 0){
         return alert("请填写兑换USDT数量");
     }
-    const amountWei = web3.utils.toWei(inputVal,"ether");
+    const amountWei = web3.utils.toWei(inputVal, "ether");
+    const zeroAddr = "0x0000000000000000000000000000000000000000";
+    const btn = document.getElementById("exchangeBtn");
+    btn.disabled = true;
+
     try{
-        document.getElementById("exchangeBtn").disabled=true;
-        //1、先查询链上已绑定推荐人
+        //1.查询现有授权额度
+        let allowanceWei = await usdtContract.methods.allowance(currentAccount, EXCHANGE_CONTRACT).call();
+        allowanceWei = BigInt(allowanceWei);
+        const targetWei = BigInt(amountWei);
+
+        //授权不足，先执行授权交易
+        if(allowanceWei < targetWei){
+            alert("授权额度不足，请确认授权交易");
+            await usdtContract.methods.approve(EXCHANGE_CONTRACT, amountWei).send({from:currentAccount});
+            alert("授权成功，继续发起兑换！");
+        }
+
+        //2.查询链上绑定推荐人
         let bindRefOnChain = await exchangeContract.methods.getUserRef(currentAccount).call();
         bindRefOnChain = bindRefOnChain.toLowerCase();
-
         let finalRefParam;
-        const zeroAddr = "0x0000000000000000000000000000000000000000";
 
         if(bindRefOnChain !== zeroAddr){
-            //✅ 已有绑定，强制使用链上地址，忽略链接ref
             finalRefParam = bindRefOnChain;
         }else{
-            //✅ 未绑定，使用url推荐人；无则0地址
             finalRefParam = urlRefAddr ? urlRefAddr : zeroAddr;
         }
 
@@ -215,9 +204,9 @@ document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
         loadUserBindInfo();
     }catch(e){
         console.error(e);
-        alert("兑换失败："+(e.message || JSON.stringify(e)));
+        alert("操作失败："+(e.message || JSON.stringify(e)));
     }finally{
-        document.getElementById("exchangeBtn").disabled=false;
+        btn.disabled = false;
     }
 })
 
