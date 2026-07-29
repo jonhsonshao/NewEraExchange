@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NewEra Exchange</title>
+    <title>CS Exchange DApp</title>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.8.2/dist/web3.min.js"></script>
     <style>
         *{box-sizing:border-box;margin:0;padding:0;font-family:Arial}
@@ -22,15 +22,15 @@
         .copy-box input{flex:1}
         .copy-box button{width:auto;padding:0 14px}
         .tip{font-size:13px;color:#8997b7;margin-top:4px}
-        .loading{color:#ffd600}
+        .error-log{background:#381919;color:#ff9e9e}
     </style>
 </head>
 <body>
 <div class="card">
-    <h2>NewEra 兑换系统</h2>
-    <div class="info">合约地址：0xA7B8B21Ca3dF01b12B1de54BafF9C1e2F29f6375</div>
+    <h2>CS 兑换系统</h2>
+    <div class="info">兑换合约：0xA7B8B21Ca3dF01b12B1de54BafF9C1e2F29f6375</div>
     <div class="row">
-        <button class="btn-blue" id="connectBtn">连接TP钱包(BSC)</button>
+        <button class="btn-blue" id="connectBtn">连接TP钱包(BSC主网)</button>
         <div class="info" id="walletInfo">未连接钱包</div>
     </div>
 </div>
@@ -42,7 +42,7 @@
             <input id="refLink" readonly>
             <button id="copyLinkBtn">复制</button>
         </div>
-        <p class="tip">别人打开链接自动带入你的推荐地址</p>
+        <p class="tip">他人打开链接自动带入你的推荐地址</p>
     </div>
     <div class="info" id="bindRefInfo">当前绑定推荐人：查询中...</div>
     <div class="info" id="refValidTip"></div>
@@ -51,22 +51,24 @@
 <div class="card">
     <div class="row">
         <label>兑换USDT数量</label>
-        <input type="number" step="0.01" id="usdtAmount" placeholder="输入USDT数量">
-        <p class="tip">1 USDT = 1000 NewEra | BSC-USDT 6位小数</p>
+        <input type="number" step="0.01" min="0.01" id="usdtAmount" placeholder="输入USDT数量">
+        <p class="tip">1 USDT = 1000 CS｜BSC-USDT = 6位小数</p>
     </div>
     <div class="row">
-        <div class="info" id="estimateOutput">预计获得 NewEra：0</div>
+        <div class="info" id="estimateOutput">预计获得 CS：0</div>
     </div>
-    <div class="info id="allowanceTip">授权额度：未查询</div>
-    <button class="btn-orange" id="approveBtn">授权USDT给兑换合约</button>
+    <div class="info" id="allowanceTip">当前授权额度：未查询</div>
+    <div class="info error-log" id="simulateLog">交易模拟日志：无</div>
+
+    <button class="btn-orange" id="approveBtn">授权（额度=输入的USDT数量）</button>
     <button class="btn-green" id="exchangeBtn">执行兑换</button>
 </div>
 
 <div class="card">
-    <h2>合约数据</h2>
+    <h2>合约全局数据</h2>
     <div class="info" id="timeLeft">剩余时效：加载中</div>
-    <div class="info" id="remainUserToken">可兑换NewEra剩余：加载中</div>
-    <div class="info" id="remainLPToken">LP池可用NewEra剩余：加载中</div>
+    <div class="info" id="remainUserToken">可兑换CS剩余：加载中</div>
+    <div class="info" id="remainLPToken">LP可用CS剩余：加载中</div>
     <div class="info" id="contractStatus">合约状态：加载中</div>
 </div>
 
@@ -79,29 +81,6 @@ const USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955";
 const EXCHANGE_RATE = 1000;
 const REF_MIN_USDT = 100;
 const USDT_DECIMAL = 6;
-
-// 合约ABI
-const ExchangeABI = [
-    {"inputs":[{"internalType":"address","name":"_newEraToken","type":"address"},{"internalType":"address","name":"_protectWallet","type":"address"},{"internalType":"address","name":"_lendingWallet","type":"address"},{"internalType":"address","name":"_lpMasterWallet","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},
-    {"inputs":[],"name":"checkShouldClose","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"exchangeClosed","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-    {"inputs":[{"internalType":"uint256","name":"payUSDTAmount","type":"uint256"},{"internalType":"address","name":"refAddr","type":"address"}],"name":"exchangeNewEra","outputs":[],"stateMutability":"nonpayable","type":"function"},
-    {"inputs":[],"name":"expireSettle","outputs":[],"stateMutability":"nonpayable","type":"function"},
-    {"inputs":[],"name":"deployTime","outputs":[{"internalType":"uint256","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"getLeftTime","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"getRemainUserToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"getRemainLpToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserRef","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
-    {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserTotalUSDT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"isExpire","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-    {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"userReferral","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"}
-];
-
-const UsdtABI = [
-    {"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},
-    {"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"success","type":"bool"}],"type":"function"},
-    {"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"remaining","type":"uint256"}],"type":"function"}
-];
 // =================================================
 
 let web3;
@@ -110,21 +89,38 @@ let usdtContract;
 let currentAccount = null;
 let urlRefAddr = null;
 
-// BSC USDT 6位小数转换函数【修复核心】
-function parseUSDTAmount(amountStr){
+/**
+ * USDT金额转换：小数转链上uint（6位）
+ */
+function usdtToUint(amountStr){
     const num = parseFloat(amountStr);
-    if(isNaN(num) || num <=0) return "0";
+    if(isNaN(num) || num <= 0) return "0";
     const unit = new web3.utils.BN("10").pow(new web3.utils.BN(USDT_DECIMAL));
     return new web3.utils.BN(num.toFixed(6)).mul(unit).toString();
 }
 
-// 读取链接上的推荐人参数
+/**
+ * 模拟兑换交易，捕获回滚原因（核心：定位预估失败）
+ */
+async function simulateExchange(amountUint, refAddr){
+    try{
+        await exchangeContract.methods.exchangeNewEra(amountUint, refAddr).call({from:currentAccount});
+        document.getElementById("simulateLog").innerText = "✅模拟成功，交易可正常执行";
+        return true;
+    }catch(err){
+        document.getElementById("simulateLog").innerText = "❌模拟失败：" + err.message;
+        console.error("模拟报错详情：", err);
+        return false;
+    }
+}
+
+// 读取URL推荐人
 function parseUrlRef(){
     const search = new URLSearchParams(window.location.search);
     const ref = search.get("ref");
     if(ref && web3.utils.isAddress(ref)){
         urlRefAddr = ref;
-        console.log("检测链接推荐地址：",ref);
+        console.log("链接携带推荐地址：", ref);
     }
 }
 
@@ -135,11 +131,12 @@ async function initWeb3(){
         web3 = new Web3(new Web3.providers.HttpProvider(RPC));
         alert("请使用TP钱包内置浏览器打开页面");
     }
-    exchangeContract = new web3.eth.Contract(ExchangeABI, EXCHANGE_CONTRACT);
-    usdtContract = new web3.eth.Contract(UsdtABI, USDT_CONTRACT);
+    exchangeContract = new web3.eth.Contract(getExchangeABI(), EXCHANGE_CONTRACT);
+    usdtContract = new web3.eth.Contract(getUsdtABI(), USDT_CONTRACT);
     parseUrlRef();
 }
 
+// 连接钱包
 document.getElementById("connectBtn").addEventListener("click",async ()=>{
     try{
         const accounts = await window.ethereum.request({method:"eth_requestAccounts"});
@@ -167,9 +164,10 @@ document.getElementById("copyLinkBtn").addEventListener("click",()=>{
     alert("推荐链接复制成功！");
 })
 
+// 输入框实时计算预期CS
 document.getElementById("usdtAmount").oninput = function(){
     const val = Number(this.value)||0;
-    document.getElementById("estimateOutput").innerText = "预计获得 NewEra："+(val * EXCHANGE_RATE).toFixed(2);
+    document.getElementById("estimateOutput").innerText = "预计获得 CS："+(val * EXCHANGE_RATE).toFixed(2);
 }
 
 // 查询当前授权额度
@@ -180,38 +178,48 @@ async function queryAllowance(){
     document.getElementById("allowanceTip").innerText = "当前授权额度："+realNum.toFixed(2)+" USDT";
 }
 
-// USDT授权【修复小数BUG】
+/**
+ * 【重点修改】授权金额 = 用户输入数量，不再无限授权
+ */
 document.getElementById("approveBtn").addEventListener("click",async ()=>{
     if(!currentAccount) return alert("先连接钱包");
-    // 超大授权 999999999 USDT (6位小数)
-    const maxAllow = new web3.utils.BN("999999999").mul(new web3.utils.BN("1000000")).toString();
+    const inputVal = document.getElementById("usdtAmount").value;
+    const approveUint = usdtToUint(inputVal);
+    if(approveUint === "0") return alert("请先填写有效的USDT兑换数量");
+
     try{
-        await usdtContract.methods.approve(EXCHANGE_CONTRACT, maxAllow).send({from:currentAccount});
-        alert("授权交易提交成功！");
-        setTimeout(queryAllowance,3000);
+        await usdtContract.methods.approve(EXCHANGE_CONTRACT, approveUint).send({from:currentAccount});
+        alert("授权交易已提交！");
+        setTimeout(queryAllowance, 3000);
     }catch(e){
         alert("授权失败："+e.message);
     }
 })
 
-// 兑换
+// 兑换按钮
 document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
     if(!currentAccount) return alert("先连接钱包");
-    const amountInput = document.getElementById("usdtAmount").value;
-    const amountWei = parseUSDTAmount(amountInput);
-    if(amountWei === "0") return alert("请填写有效USDT数量");
+    const inputVal = document.getElementById("usdtAmount").value;
+    const amountUint = usdtToUint(inputVal);
+    if(amountUint === "0") return alert("请填写USDT数量");
 
-    // 优先链接推荐地址
+    // 优先读取链接推荐地址
     let refAddr = urlRefAddr || "0x0000000000000000000000000000000000000000";
+
+    // 先模拟交易，提前暴露错误
+    const canRun = await simulateExchange(amountUint, refAddr);
+    if(!canRun){
+        return alert("模拟执行失败，请查看页面【交易模拟日志】排查原因！");
+    }
+
     try{
-        await exchangeContract.methods.exchangeNewEra(amountWei, refAddr).send({from:currentAccount});
-        alert("兑换交易已上链！");
+        await exchangeContract.methods.exchangeNewEra(amountUint, refAddr).send({from:currentAccount});
+        alert("兑换交易提交成功！");
         loadContractData();
         loadUserBindInfo();
         queryAllowance();
     }catch(e){
-        console.error(e);
-        alert("兑换失败："+e.message+"\n\n排查方向：\n1.合约NewEra余额充足\n2.未达到上限/未过期\n3.资金池价格波动触发滑点");
+        alert("兑换失败："+e.message);
     }
 })
 
@@ -225,8 +233,8 @@ async function loadContractData(){
         const day = Math.floor(leftTime/(86400));
         const hour = Math.floor((leftTime%86400)/3600);
         document.getElementById("timeLeft").innerText = `剩余时效：${day}天${hour}小时`;
-        document.getElementById("remainUserToken").innerText = "可兑换NewEra剩余："+web3.utils.fromWei(remainUser,"ether");
-        document.getElementById("remainLPToken").innerText = "LP池可用NewEra剩余："+web3.utils.fromWei(remainLP,"ether");
+        document.getElementById("remainUserToken").innerText = "可兑换CS剩余："+web3.utils.fromWei(remainUser,"ether");
+        document.getElementById("remainLPToken").innerText = "LP池可用CS剩余："+web3.utils.fromWei(remainLP,"ether");
         document.getElementById("contractStatus").innerText = closed ? "合约状态：已关闭兑换" : "合约状态：正常开放";
     }catch(e){
         console.error(e);
@@ -243,16 +251,40 @@ async function loadUserBindInfo(){
             const refPay = await exchangeContract.methods.getUserTotalUSDT(bindRef).call();
             const refPayNum = Number(refPay)/1e6;
             if(refPayNum >= REF_MIN_USDT){
-                document.getElementById("refValidTip").innerText = "✅ 推荐人满足100USDT门槛";
+                document.getElementById("refValidTip").innerText = "✅推荐人满足100USDT门槛，奖励正常发放";
             }else{
-                document.getElementById("refValidTip").innerText = "⚠️ 推荐人不足100USDT，奖励划入保护钱包";
+                document.getElementById("refValidTip").innerText = "⚠️推荐人不足100USDT，推荐奖励划入保护钱包";
             }
         }else{
-            document.getElementById("refValidTip").innerText = "暂无绑定推荐人，可通过分享链接绑定";
+            document.getElementById("refValidTip").innerText = "暂无绑定推荐人，打开分享链接完成首次绑定";
         }
     }catch(e){
         console.error(e);
     }
+}
+
+// ABI分离
+function getExchangeABI(){
+    return [
+        {"inputs":[{"internalType":"address","name":"_newEraToken","type":"address"},{"internalType":"address","name":"_protectWallet","type":"address"},{"internalType":"address","name":"_lendingWallet","type":"address"},{"internalType":"address","name":"_lpMasterWallet","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},
+        {"inputs":[],"name":"checkShouldClose","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"exchangeClosed","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+        {"inputs":[{"internalType":"uint256","name":"payUSDTAmount","type":"uint256"},{"internalType":"address","name":"refAddr","type":"address"}],"name":"exchangeNewEra","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"expireSettle","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"getLeftTime","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"getRemainUserToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"getRemainLpToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserRef","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+        {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserTotalUSDT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"isExpire","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}
+    ];
+}
+function getUsdtABI(){
+    return [
+        {"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},
+        {"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"success","type":"bool"}],"type":"function"},
+        {"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"remaining","type":"uint256"}],"type":"function"}
+    ];
 }
 
 window.onload = async ()=>{
