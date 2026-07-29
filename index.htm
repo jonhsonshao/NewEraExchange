@@ -79,6 +79,7 @@ const USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955";
 const EXCHANGE_RATE = 1000;
 const REF_MIN_USDT = 100;
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+const BSC_CHAIN_ID = "0x38";
 
 const ExchangeABI = [
     {"inputs":[{"internalType":"address","name":"_newEraToken","type":"address"},{"internalType":"address","name":"_protectWallet","type":"address"},{"internalType":"address","name":"_lendingWallet","type":"address"},{"internalType":"address","name":"_lpMasterWallet","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},
@@ -87,7 +88,7 @@ const ExchangeABI = [
     {"inputs":[{"internalType":"uint256","name":"payUSDTAmount","type":"uint256"},{"internalType":"address","name":"refAddr","type":"address"}],"name":"exchangeNewEra","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[],"name":"expireSettle","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[],"name":"getLeftTime","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"getRemainUserToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","function"},
+    {"inputs":[],"name":"getRemainUserToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
     {"inputs":[],"name":"getRemainLpToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserRef","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserTotalUSDT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
@@ -106,51 +107,57 @@ let usdtContract;
 let currentAccount = null;
 let cacheRefAddr = null;
 
-/**
- * 【重点重构】推荐地址解析逻辑
- * 1. 页面打开优先读取URL ref参数
- * 2. 禁止推荐人 = 当前登录钱包（防自推）
- * 3. URL携带ref → 直接覆盖本地缓存
- * 4. URL无ref，才读取本地缓存
- */
+//解析URL推荐人，URL参数 > localStorage
 function parseUrlRef(){
     const search = new URLSearchParams(window.location.search);
     const urlRef = search.get("ref");
-
-    //情况1：链接带有ref参数（别人分享的推荐链接）
     if(urlRef && web3.utils.isAddress(urlRef)){
-        const targetRef = urlRef.toLowerCase();
-        //先临时赋值，登录钱包后二次校验是否自己推荐自己
-        cacheRefAddr = targetRef;
+        cacheRefAddr = urlRef.toLowerCase();
         localStorage.setItem("cachedReferral", cacheRefAddr);
-        console.log("✅ 使用链接携带推荐人：",cacheRefAddr);
+        console.log("✅ 链接携带推荐人：",cacheRefAddr);
         return;
     }
-
-    //情况2：链接不带ref，读取本地缓存
     const localRef = localStorage.getItem("cachedReferral");
     if(localRef && web3.utils.isAddress(localRef)){
         cacheRefAddr = localRef;
-        console.log("📦 使用本地缓存推荐人：",cacheRefAddr);
+        console.log("📦 读取本地缓存推荐人：",cacheRefAddr);
     }else{
         cacheRefAddr = null;
+        localStorage.removeItem("cachedReferral");
     }
 }
 
-//登录钱包成功后执行：校验禁止自己推荐自己
+//自推校验：自己不能作为自己的推荐人
 function checkSelfReferral(){
     if(!currentAccount || !cacheRefAddr) return;
-    if(currentAccount === cacheRefAddr){
-        //自推冲突，清空推荐缓存
+    if(currentAccount.toLowerCase() === cacheRefAddr.toLowerCase()){
         cacheRefAddr = null;
         localStorage.removeItem("cachedReferral");
-        console.log("❌ 禁止自身推荐自身，清除推荐缓存");
+        console.log("❌ 禁止自推荐，清除推荐缓存");
+    }
+}
+
+//自动连接重试（解决TP读取延迟）
+async function tryAutoConnect(){
+    try{
+        const accounts = await window.ethereum.request({method:"eth_accounts"});
+        if(accounts.length > 0){
+            currentAccount = accounts[0].toLowerCase();
+            checkSelfReferral();
+            refreshWalletUI();
+            loadContractData();
+            loadUserBindInfo();
+        }else{
+            console.log("ℹ️ 无已授权钱包，等待手动连接");
+        }
+    }catch(e){
+        console.log("自动查询账户失败：",e.message);
     }
 }
 
 async function initWeb3(){
     if(!window.ethereum){
-        alert("请使用TP钱包内置浏览器访问");
+        alert("请使用TP钱包内置浏览器打开页面！");
         return false;
     }
     web3 = new Web3(window.ethereum);
@@ -158,22 +165,13 @@ async function initWeb3(){
     usdtContract = new web3.eth.Contract(UsdtABI, USDT_CONTRACT);
     parseUrlRef();
 
-    //页面加载静默检测已有授权钱包
-    try{
-        const accounts = await window.ethereum.request({method:"eth_accounts"});
-        if(accounts.length > 0){
-            currentAccount = accounts[0].toLowerCase();
-            checkSelfReferral(); //登录完成校验自推
-            refreshWalletUI();
-            loadContractData();
-            loadUserBindInfo();
-        }
-    }catch(e){
-        console.log("暂未授权网站");
-    }
+    //延迟500ms重试，适配TP钱包provider加载慢的问题
+    setTimeout(async ()=>{
+        await tryAutoConnect();
+    },500);
 
-    //监听钱包切换账户
-    window.ethereum.on("accountsChanged", (accounts)=>{
+    //监听账户切换
+    window.ethereum.on("accountsChanged", async (accounts)=>{
         if(accounts.length === 0){
             currentAccount = null;
         }else{
@@ -186,11 +184,17 @@ async function initWeb3(){
     return true;
 }
 
+//手动唤起钱包连接弹窗
 async function connectWallet(){
     try{
         const accounts = await window.ethereum.request({method:"eth_requestAccounts"});
         currentAccount = accounts[0].toLowerCase();
         checkSelfReferral();
+        //校验链是否BSC
+        const chainId = await window.ethereum.request({method:"eth_chainId"});
+        if(chainId !== BSC_CHAIN_ID){
+            alert("请切换钱包网络为 BSC(BNB智能链)！");
+        }
         refreshWalletUI();
         loadContractData();
         loadUserBindInfo();
@@ -229,6 +233,7 @@ document.getElementById("usdtAmount").oninput = function(){
     document.getElementById("estimateOutput").innerText = "预计获得 NewEra："+(val * EXCHANGE_RATE).toFixed(2);
 }
 
+//兑换主逻辑
 document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
     if(!currentAccount){
         await connectWallet();
@@ -251,7 +256,7 @@ document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
             await usdtContract.methods.approve(EXCHANGE_CONTRACT, diff.toString()).send({from:currentAccount});
         }
 
-        // 优先读取链上绑定，前端缓存仅在无绑定状态生效
+        //优先使用链上已绑定推荐人
         let bindOnChain = (await exchangeContract.methods.getUserRef(currentAccount).call()).toLowerCase();
         let finalRef;
         if(bindOnChain !== ZERO_ADDR){
@@ -261,7 +266,7 @@ document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
         }
 
         await exchangeContract.methods.exchangeNewEra(targetWei.toString(), finalRef).send({from:currentAccount});
-        alert("兑换成功！");
+        alert("🎉 兑换成功！");
         loadContractData();
         loadUserBindInfo();
     }catch(err){
@@ -285,7 +290,9 @@ async function loadContractData(){
         document.getElementById("remainUserToken").innerText = "可兑换NewEra剩余："+Number(web3.utils.fromWei(remainUser,"ether")).toFixed(2);
         document.getElementById("remainLPToken").innerText = "LP池可用NewEra剩余："+Number(web3.utils.fromWei(remainLP,"ether")).toFixed(2);
         document.getElementById("contractStatus").innerText = closed ? "合约状态：已关闭兑换" : "合约状态：正常开放";
-    }catch(e){}
+    }catch(e){
+        console.log("合约数据读取异常");
+    }
 }
 
 async function loadUserBindInfo(){
@@ -307,7 +314,7 @@ async function loadUserBindInfo(){
         }else{
             if(cacheRefAddr){
                 infoDom.innerText = "链上暂无绑定 | 已缓存推荐人："+cacheRefAddr;
-                tipDom.innerText = "执行兑换时将自动完成推荐绑定";
+                tipDom.innerText = "执行兑换时自动完成推荐绑定";
             }else{
                 infoDom.innerText = "当前绑定推荐人：无";
                 tipDom.innerText = "";
