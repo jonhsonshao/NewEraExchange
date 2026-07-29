@@ -87,7 +87,7 @@ const ExchangeABI = [
     {"inputs":[{"internalType":"uint256","name":"payUSDTAmount","type":"uint256"},{"internalType":"address","name":"refAddr","type":"address"}],"name":"exchangeNewEra","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[],"name":"expireSettle","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[],"name":"getLeftTime","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"getRemainUserToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+    {"inputs":[],"name":"getRemainUserToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","function"},
     {"inputs":[],"name":"getRemainLpToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserRef","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
     {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserTotalUSDT","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
@@ -106,19 +106,46 @@ let usdtContract;
 let currentAccount = null;
 let cacheRefAddr = null;
 
-//解析URL推荐人并持久存入localStorage（关闭页面再次进入依然保留推荐人）
+/**
+ * 【重点重构】推荐地址解析逻辑
+ * 1. 页面打开优先读取URL ref参数
+ * 2. 禁止推荐人 = 当前登录钱包（防自推）
+ * 3. URL携带ref → 直接覆盖本地缓存
+ * 4. URL无ref，才读取本地缓存
+ */
 function parseUrlRef(){
     const search = new URLSearchParams(window.location.search);
-    const ref = search.get("ref");
-    if(ref && web3.utils.isAddress(ref)){
-        cacheRefAddr = ref.toLowerCase();
+    const urlRef = search.get("ref");
+
+    //情况1：链接带有ref参数（别人分享的推荐链接）
+    if(urlRef && web3.utils.isAddress(urlRef)){
+        const targetRef = urlRef.toLowerCase();
+        //先临时赋值，登录钱包后二次校验是否自己推荐自己
+        cacheRefAddr = targetRef;
         localStorage.setItem("cachedReferral", cacheRefAddr);
-    }else{
-        //url不带ref，读取本地缓存
-        const localRef = localStorage.getItem("cachedReferral");
-        if(localRef) cacheRefAddr = localRef;
+        console.log("✅ 使用链接携带推荐人：",cacheRefAddr);
+        return;
     }
-    console.log("有效缓存推荐人：",cacheRefAddr);
+
+    //情况2：链接不带ref，读取本地缓存
+    const localRef = localStorage.getItem("cachedReferral");
+    if(localRef && web3.utils.isAddress(localRef)){
+        cacheRefAddr = localRef;
+        console.log("📦 使用本地缓存推荐人：",cacheRefAddr);
+    }else{
+        cacheRefAddr = null;
+    }
+}
+
+//登录钱包成功后执行：校验禁止自己推荐自己
+function checkSelfReferral(){
+    if(!currentAccount || !cacheRefAddr) return;
+    if(currentAccount === cacheRefAddr){
+        //自推冲突，清空推荐缓存
+        cacheRefAddr = null;
+        localStorage.removeItem("cachedReferral");
+        console.log("❌ 禁止自身推荐自身，清除推荐缓存");
+    }
 }
 
 async function initWeb3(){
@@ -131,11 +158,12 @@ async function initWeb3(){
     usdtContract = new web3.eth.Contract(UsdtABI, USDT_CONTRACT);
     parseUrlRef();
 
-    //页面加载【静默检测已有授权钱包】（无需弹窗，自动登录）
+    //页面加载静默检测已有授权钱包
     try{
         const accounts = await window.ethereum.request({method:"eth_accounts"});
         if(accounts.length > 0){
             currentAccount = accounts[0].toLowerCase();
+            checkSelfReferral(); //登录完成校验自推
             refreshWalletUI();
             loadContractData();
             loadUserBindInfo();
@@ -150,6 +178,7 @@ async function initWeb3(){
             currentAccount = null;
         }else{
             currentAccount = accounts[0].toLowerCase();
+            checkSelfReferral();
         }
         refreshWalletUI();
         loadUserBindInfo();
@@ -157,11 +186,11 @@ async function initWeb3(){
     return true;
 }
 
-//主动发起钱包弹窗连接
 async function connectWallet(){
     try{
         const accounts = await window.ethereum.request({method:"eth_requestAccounts"});
         currentAccount = accounts[0].toLowerCase();
+        checkSelfReferral();
         refreshWalletUI();
         loadContractData();
         loadUserBindInfo();
@@ -201,7 +230,6 @@ document.getElementById("usdtAmount").oninput = function(){
 }
 
 document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
-    //未登录，立刻唤起钱包连接弹窗
     if(!currentAccount){
         await connectWallet();
         if(!currentAccount) return;
@@ -217,14 +245,13 @@ document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
     btn.disabled = true;
 
     try{
-        //查询授权额度
         let allowanceWei = BigInt(await usdtContract.methods.allowance(currentAccount, EXCHANGE_CONTRACT).call());
         if(allowanceWei < targetWei){
             const diff = targetWei - allowanceWei;
             await usdtContract.methods.approve(EXCHANGE_CONTRACT, diff.toString()).send({from:currentAccount});
         }
 
-        //判定推荐地址
+        // 优先读取链上绑定，前端缓存仅在无绑定状态生效
         let bindOnChain = (await exchangeContract.methods.getUserRef(currentAccount).call()).toLowerCase();
         let finalRef;
         if(bindOnChain !== ZERO_ADDR){
@@ -233,7 +260,6 @@ document.getElementById("exchangeBtn").addEventListener("click",async ()=>{
             finalRef = cacheRefAddr ? cacheRefAddr : ZERO_ADDR;
         }
 
-        //兑换交易，同时完成推荐绑定
         await exchangeContract.methods.exchangeNewEra(targetWei.toString(), finalRef).send({from:currentAccount});
         alert("兑换成功！");
         loadContractData();
