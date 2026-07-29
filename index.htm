@@ -3,129 +3,202 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SDD Exchange</title>
+    <title>NewEra Exchange</title>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.8.2/dist/web3.min.js"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
         body{background:#0f172a;color:#fff;padding:20px;min-height:100vh}
-        .box{max-width:500px;margin:0 auto;background:#1e293b;padding:24px;border-radius:16px}
+        .container{max-width:520px;margin:0 auto;background:#1e293b;padding:24px;border-radius:18px}
         h2{text-align:center;margin-bottom:24px;color:#38bdf8}
         .item{margin-bottom:16px}
-        label{display:block;margin-bottom:8px;color:#cbd5e1}
-        input{width:100%;padding:14px;border:1px solid #475569;background:#0f172a;color:#fff;border-radius:10px;font-size:16px}
-        .btn{width:100%;padding:15px;border:none;border-radius:10px;font-size:16px;font-weight:bold;margin-top:10px;cursor:pointer;background:#0284c7;color:#fff}
-        .info{margin-top:20px;padding:16px;background:#334155;border-radius:10px;font-size:14px;line-height:1.6}
+        label{display:block;margin-bottom:6px;color:#cbd5e1;font-size:14px}
+        input{width:100%;padding:14px;background:#0f172a;border:1px solid #475569;border-radius:10px;color:#fff;font-size:16px;outline:none}
+        .btn{width:100%;padding:15px;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:8px}
+        .btn-blue{background:#0284c7;color:#fff}
+        .btn-small{padding:10px;margin-top:6px}
+        .info-box{margin-top:20px;padding:16px;background:#334155;border-radius:12px;font-size:14px;line-height:1.7}
+        .link-row{display:flex;gap:8px}
+        .link-row input{flex:1}
+        .tip{font-size:12px;color:#94a3b8;margin-top:4px}
     </style>
 </head>
 <body>
-<div class="box">
-    <h2>SDD 兑换通道</h2>
-    <div class="item">
-        <label>支付USDT数量（1U=10SDD）</label>
-        <input id="usdtInput" placeholder="输入USDT金额" value="">
-    </div>
-    <button class="btn" id="swapBtn">一键兑换SDD</button>
+<div class="container">
+    <h2>NewEra 兑换系统</h2>
 
-    <div class="info">
-        <p>当前钱包地址：<span id="walletAddr">-</span></p>
-        <p>合约剩余可兑换SDD：<span id="remainSDD">-</span></p>
-        <p>合约剩余LP储备SDD：<span id="remainLP">-</span></p>
-        <p>合约状态：<span id="contractStatus">-</span></p>
+    <div class="item">
+        <label>我的专属推荐链接</label>
+        <div class="link-row">
+            <input id="refLink" readonly placeholder="连接钱包后生成链接">
+        </div>
+        <button class="btn btn-blue btn-small" id="copyRefBtn">复制推荐链接</button>
+        <div class="tip">分享链接，好友打开自动绑定你为推荐人</div>
+    </div>
+
+    <div class="item">
+        <label>投入 USDT 数量 (1USDT=1000 NewEra)</label>
+        <input id="usdtInput" placeholder="输入USDT数量，例如 10">
+    </div>
+
+    <div class="item">
+        <label>推荐人地址</label>
+        <input id="refAddrInput" placeholder="通过链接打开自动填充">
+        <div class="tip">无推荐人留空，合约自动处理分润</div>
+    </div>
+
+    <button class="btn btn-blue" id="connectBtn">连接TP钱包</button>
+    <button class="btn btn-blue" id="approveBtn" style="background:#0369a1">授权USDT</button>
+    <button class="btn btn-blue" id="exchangeBtn">兑换 NewEra</button>
+
+    <div class="info-box">
+        <p>钱包地址：<span id="walletAddr">-</span></p>
+        <p>绑定推荐人：<span id="bindRef">-</span></p>
+        <p>剩余可兑换NewEra：<span id="remainToken">-</span></p>
+        <p>剩余有效期(秒)：<span id="leftTime">-</span></p>
+        <p>合约状态：<span id="statusTxt">-</span></p>
     </div>
 </div>
 
 <script>
-const USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955";
-// 部署SDD兑换合约后替换此处地址
-const EXCHANGE_CONTRACT = "0xa5683943280e0ec64301debb778deac086b40cd6";
+// ========== 配置区域（已全部填好，无需修改）==========
+const CHAIN_ID = 56; // BSC主网
+const USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955";
+const EXCHANGE_CONTRACT = "0x4DB21Fc6805b700438c8CaB2318f224892dDAB3d";
 
-const USDT_ABI = [
+// USDT ABI
+const abiUSDT = [
+    {"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"},
     {"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"type":"function"},
     {"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"type":"function"}
 ];
 
-const EXCHANGE_ABI = [
-    {"inputs":[{"internalType":"uint256","name":"payUSDTAmount","type":"uint256"}],"name":"exchangeSDD","outputs":[],"stateMutability":"nonpayable","type":"function"},
-    {"inputs":[],"name":"getRemainUserSDD","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-    {"inputs":[],"name":"getRemainLpReserveSDD","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+// NewEra兑换合约ABI
+const abiExchange = [
+    {"inputs":[{"internalType":"uint256","name":"payUSDTAmount","type":"uint256"},{"internalType":"address","name":"refAddr","type":"address"}],"name":"exchangeNewEra","outputs":[],"stateMutability":"nonpayable","type":"function"},
+    {"inputs":[{"internalType":"address","name":"user","type":"address"}],"name":"getUserRef","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+    {"inputs":[],"name":"getRemainUserToken","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+    {"inputs":[],"name":"getLeftTime","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
     {"inputs":[],"name":"exchangeClosed","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}
 ];
 
-let web3 = null;
-let userWallet = "";
-let usdtContract = null;
-let exchangeContract = null;
-const decimals = 18;
-let LOW_GAS;
+// 全局变量
+let web3;
+let userAccount;
+let contractUSDT;
+let contractExchange;
+const DECIMAL = "1000000000000000000";
+const BASE_URL = window.location.origin + window.location.pathname;
 
-window.onload = async function(){
-    await initWeb3();
-    setInterval(updateContractInfo,5000);
+// 读取URL推荐人参数
+function parseRefParam(){
+    const urlParams = new URLSearchParams(window.location.search);
+    const ref = urlParams.get("ref");
+    if(ref && ref.length === 42){
+        document.getElementById("refAddrInput").value = ref;
+    }
 }
 
-async function initWeb3(){
+// 生成推荐链接
+function buildRefLink(addr){
+    return `${BASE_URL}?ref=${addr}`;
+}
+
+// 页面初始化读取参数
+parseRefParam();
+
+// 连接钱包
+document.getElementById("connectBtn").onclick = async function(){
     if(!window.ethereum){
-        document.getElementById("walletAddr").innerText="非TP钱包浏览器";
+        alert("请使用TP钱包内置浏览器打开");
         return;
     }
     try{
+        const accounts = await window.ethereum.request({method:"eth_requestAccounts"});
+        userAccount = accounts[0];
         web3 = new Web3(window.ethereum);
-        LOW_GAS = web3.utils.toWei("1","gwei");
-        let acc = await window.ethereum.request({method:'eth_requestAccounts'});
-        userWallet = acc[0];
-        document.getElementById("walletAddr").innerText = userWallet.slice(0,10)+"..."+userWallet.slice(-8);
-        usdtContract = new web3.eth.Contract(USDT_ABI,USDT_CONTRACT);
-        exchangeContract = new web3.eth.Contract(EXCHANGE_ABI,EXCHANGE_CONTRACT);
-        updateContractInfo();
-    }catch(e){
-        document.getElementById("walletAddr").innerText="链接失败";
-    }
-}
+        contractUSDT = new web3.eth.Contract(abiUSDT, USDT_ADDRESS);
+        contractExchange = new web3.eth.Contract(abiExchange, EXCHANGE_CONTRACT);
 
-async function updateContractInfo(){
-    if(!exchangeContract) return;
-    try{
-        let remUser = await exchangeContract.methods.getRemainUserSDD().call();
-        let remLp = await exchangeContract.methods.getRemainLpReserveSDD().call();
-        let closeStat = await exchangeContract.methods.exchangeClosed().call();
-        document.getElementById("remainSDD").innerText = web3.utils.fromWei(remUser,decimals);
-        document.getElementById("remainLP").innerText = web3.utils.fromWei(remLp,decimals);
-        document.getElementById("contractStatus").innerText = closeStat?"通道关闭":"正常开放";
-    }catch(e){}
-}
-
-document.getElementById("swapBtn").onclick = async function(){
-    if(!userWallet){
-        alert("正在连接钱包，稍候重试");
-        return;
-    }
-    let inputVal = document.getElementById("usdtInput").value.trim();
-    if(isNaN(inputVal)||Number(inputVal)<=0){
-        alert("请填写正确USDT数量");
-        return;
-    }
-    let needWei = web3.utils.toWei(inputVal,"ether");
-    try{
-        let allow = await usdtContract.methods.allowance(userWallet,EXCHANGE_CONTRACT).call();
-        let bnAllow = web3.utils.toBN(allow);
-        let bnNeed = web3.utils.toBN(needWei);
-
-        if(bnAllow.lt(bnNeed)){
-            await usdtContract.methods.approve(EXCHANGE_CONTRACT,needWei).send({
-                from:userWallet,
-                gasPrice:LOW_GAS
-            });
-        }
-        await exchangeContract.methods.exchangeSDD(needWei).send({
-            from:userWallet,
-            gasPrice:LOW_GAS
-        });
-        alert("兑换成功");
-        document.getElementById("usdtInput").value="";
-        updateContractInfo();
+        document.getElementById("walletAddr").innerText = userAccount;
+        document.getElementById("refLink").value = buildRefLink(userAccount);
+        alert("连接成功");
+        refreshData();
     }catch(err){
-        alert("失败："+(err.message||err));
+        console.error(err);
+        alert("连接失败");
     }
+};
+
+// 复制链接
+document.getElementById("copyRefBtn").onclick = async function(){
+    const link = document.getElementById("refLink").value;
+    if(!link){
+        alert("先连接钱包");
+        return;
+    }
+    try{
+        await navigator.clipboard.writeText(link);
+        alert("推荐链接复制成功！");
+    }catch{
+        alert("复制失败，请手动复制");
+    }
+};
+
+// USDT授权
+document.getElementById("approveBtn").onclick = async function(){
+    if(!userAccount) return alert("先连接钱包");
+    const amount = document.getElementById("usdtInput").value.trim();
+    if(!amount || Number(amount) <= 0) return alert("填写USDT数量");
+    const amountWei = web3.utils.toWei(amount, "ether");
+    try{
+        await contractUSDT.methods.approve(EXCHANGE_CONTRACT, amountWei).send({from:userAccount});
+        alert("授权成功，可以兑换");
+    }catch(err){
+        alert("授权失败:"+err.message);
+    }
+};
+
+// 兑换
+document.getElementById("exchangeBtn").onclick = async function(){
+    if(!userAccount) return alert("先连接钱包");
+    const amount = document.getElementById("usdtInput").value.trim();
+    let refAddr = document.getElementById("refAddrInput").value.trim();
+    if(!amount || Number(amount) <= 0) return alert("填写USDT数量");
+    // 无推荐人传入零地址
+    if(!refAddr || refAddr.length !==42) refAddr = "0x0000000000000000000000000000000000000000";
+    const amountWei = web3.utils.toWei(amount, "ether");
+    try{
+        await contractExchange.methods.exchangeNewEra(amountWei, refAddr).send({from:userAccount});
+        alert("兑换成功！");
+        refreshData();
+    }catch(err){
+        alert("兑换失败："+err.message);
+    }
+};
+
+// 刷新合约数据
+async function refreshData(){
+    if(!contractExchange || !userAccount) return;
+    try{
+        const bindRef = await contractExchange.methods.getUserRef(userAccount).call();
+        const remain = await contractExchange.methods.getRemainUserToken().call();
+        const leftSec = await contractExchange.methods.getLeftTime().call();
+        const closed = await contractExchange.methods.exchangeClosed().call();
+
+        document.getElementById("bindRef").innerText = bindRef;
+        document.getElementById("remainToken").innerText = web3.utils.fromWei(remain,"ether");
+        document.getElementById("leftTime").innerText = leftSec;
+        document.getElementById("statusTxt").innerText = closed ? "已关闭" : "正常开放";
+    }catch(e){
+        console.log(e);
+    }
+}
+
+// 自动监听账户切换
+if(window.ethereum){
+    window.ethereum.on("accountsChanged",()=>{
+        location.reload();
+    });
 }
 </script>
 </body>
